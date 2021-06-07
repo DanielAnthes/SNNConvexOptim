@@ -29,7 +29,6 @@ def optim(lamb, y, b, iter, eta):
 
     for i in range(iter):
         dy = (-lamb * y) - b
-        print(dy)
         y += eta * dy
         trajectory[i+1] = y.squeeze()
 
@@ -40,8 +39,12 @@ def constrained_optim(lamb, x, y, b, iter, eta, D, F, G, T):
     trajectory[0] = y.squeeze()
     
     for i in range(iter):
-        s = evaluate_constraints(F, x, G, y, T)
-        dy = (-lamb * y) - b + (s.T @ D).T
+        s = ~ evaluate_constraints(F, x, G, y, T)  # record spike for violated constraint
+        if s.any():
+            dy = (s.T @ D).T
+        else:
+            dy = (-lamb * y) - b 
+        # dy = (-lamb * y) - b + (s.T @ D).T
         assert dy.shape == (2,1), f"actual shape: {dy.shape}, {s.T.shape, D.shape}"
         y += eta * dy
         trajectory[i+1] = y.squeeze()
@@ -60,19 +63,22 @@ F = np.array([[1,1],
               [3,-3], 
               [2,-1]])
 
+G = np.array([[1,2],
+              [-.3,1.3],
+              [1, .6]])
 
-G = np.array([[-3,2],
-              [.1,1],
-              [1,1]])
+T = np.array( [[6],
+               [7],
+               [8]])
 
-T = np.array( [[-3],
-               [3],
-               [5]])
+# F = np.array([[3,-3]])
+# G = np.array([[.3,1.3]])
+# T = np.array([[0.]])
 
 n_constraints = F.shape[0]
 
-x = np.array([[3],
-              [1]])
+x = np.array([[5],
+              [3]])
 
 
 
@@ -90,7 +96,18 @@ Z = np.reshape(z, Y1.shape)
 ################
 
 y = np.array([[-5.], [10.]])
-trajectory, y_final = constrained_optim(1,x, y, np.ones((2,1)), 10000, 0.01, G, F, G, T)
+b = np.ones((2,1))
+nsteps = 10000
+eta = 0.001
+lamb = 1
+# trajectory, y_final = optim(lamb,y, b, nsteps, eta)
+
+D = np.zeros(G.shape)
+D[:,0] = G[:,1]
+D[:,1] = -G[:,0]
+D = G / np.sqrt(G[:,0]**2 + G[:,1]**2)[:,None]  # normalize bounce vector to unit length
+D *= 1000
+trajectory_constrained, y_optim_constrained = constrained_optim(lamb, x, y, b, nsteps, eta, D, F, G, T)
 
 ################
 ### Plotting ###
@@ -110,12 +127,13 @@ infeasible_region = ~ feasible_region
 
 fig = plt.figure()
 ax = fig.add_subplot()
-ax.contourf(Y1,Y2,Z, cmap='binary')
-ax.contourf(Y1, Y2, infeasible_region, cmap='binary', alpha=.3)
+ax.contour(Y1,Y2,Z, cmap='binary', linestyles='dashed')
+ax.contourf(Y1, Y2, infeasible_region, cmap='binary', alpha=.1)
 for i in range(n_constraints):
     ax.plot( Y[0], y2[i,:], label=f"constraint {str(i)}")
 
-ax.plot(trajectory[:,0], trajectory[:,1], color='black')
+# ax.plot(trajectory[:,0], trajectory[:,1], color='gray')
+ax.plot(trajectory_constrained[:,0], trajectory_constrained[:,1], color='red')
 ax.set_xlim([-10,10])
 ax.set_ylim([-10,10])
 ax.set_aspect('equal', 'box')
