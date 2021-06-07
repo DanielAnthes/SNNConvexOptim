@@ -2,6 +2,8 @@ import numpy as np
 import matplotlib
 import matplotlib.pyplot as plt
 from mpl_toolkits import mplot3d
+import quadprog
+from util import plot_neuron_voltages, plot_readout, plot_raster
 
 def plot_line_2D(f,g,t,x,y):
     return ( (f @ x) - (g[:,0][:,None] * y) - t) / g[:,1][:,None]
@@ -53,28 +55,9 @@ def constrained_optim(lamb, x, y, b, iter, eta, D, F, G, T):
     voltages[-1] = ((F @ x) - (G @ y)).squeeze()
     return trajectory, voltages, y
 
-def plot_neuron_voltages(voltages, thresholds, eta):
-    n_neurons = len(thresholds)
-    t = np.array(range(voltages.shape[0])) * eta
-    for n in range(n_neurons):
-        vs = voltages[:,n]
-        plt.plot(t, vs, label=f"neuron {n}")
-        plt.plot(t, [thresholds[n]] * len(t), label=f"threshold {n}")
-
-def plot_readout(y, eta):
-    n_steps, n_neurons = y.shape
-    t = np.array(range(n_steps)) * eta
-    for n in range(n_neurons):
-        traj = y[:, n]
-        plt.plot(t, traj, label=f"y{n+1}")
-
-def plot_raster(voltages, thresholds, eta):
-    spikes = np.asarray(voltages > thresholds[None,:]).nonzero()
-    plt.scatter(spikes[0] * eta, spikes[1])
-
-################
-###   INIT   ###
-################
+############################
+###   SNN OPTIMIZATION   ###
+############################
 
 F = np.array([[1,1],  # forward weights
               [3,-3], 
@@ -84,14 +67,14 @@ G = np.array([[1,2],  # recurrent weights
               [-.3,1.3],
               [1, .6]])
 
-T = np.array( [[6],  # thresholds
-               [7],
-               [7]])
+T = np.array( [[6.],  # thresholds
+               [7.],
+               [7.]])
 
 n_constraints = F.shape[0]
 
-x = np.array([[5],  # input to the problem
-              [3]])
+x = np.array([[5.],  # input to the problem
+              [3.]])
 
 
 y = np.array([[-5.], [10.]])  # initial position
@@ -105,6 +88,22 @@ D = G / np.sqrt(G[:,0]**2 + G[:,1]**2)[:,None]  # normalize bounce vector to uni
 D *= 1000  # scale up D so that bounces become visible (has to counteract learning rate)
 
 trajectory_constrained, voltages_constrained, y_optim_constrained = constrained_optim(lamb, x, y, b, nsteps, eta, D, F, G, T)
+
+
+###########################
+###       QUADPROG      ###
+###########################
+
+ndim = len(y)
+qp_G = np.eye(ndim) * lamb
+q = b.squeeze()
+
+qp_a = -q
+qp_C = G.T
+qp_b = -(T - (F @ x)).squeeze()
+meq = 0
+
+qp_y = quadprog.solve_qp(qp_G, qp_a, qp_C, qp_b, meq)[0]
 
 ################
 ### Plotting ###
@@ -145,6 +144,7 @@ for i in range(n_constraints):
     ax.plot( Y[0], y2[i,:], label=f"constraint {str(i)}")
 
 ax.plot(trajectory_constrained[:,0], trajectory_constrained[:,1], color='red')
+ax.scatter([qp_y[0]], [qp_y[1]], marker='*', color='black', s=200, label='solver y*')
 ax.set_xlim([-10,10])
 ax.set_ylim([-10,10])
 ax.set_aspect('equal', 'box')
