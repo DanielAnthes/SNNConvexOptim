@@ -27,3 +27,8 @@ def plot_line_2D(f,g,t,x,y):
 def evaluate_constraints(F,x,G,y,T):
     return (F @ x) - (G @ y) <= T
 
+def base2float(mantissa, exponent):
+    return mantissa * 2 ** exponent
+
+def getmant(real, exponent):
+    return real / (2**exponent)
